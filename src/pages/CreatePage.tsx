@@ -1,19 +1,20 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, MapPin, Calendar, Box, Settings, Users, Zap, ChevronRight, Check } from 'lucide-react';
+import { ArrowLeft, MapPin, Calendar, Box, Settings, Users, Zap, ChevronRight, Check, Clock } from 'lucide-react';
 import Header from '@/components/Layout/Header';
 import Button from '@/components/ui/Button';
 import Tag from '@/components/ui/Tag';
 import { useBoxStore } from '@/store/useBoxStore';
 import { getCities, getDistricts, getMalls, getStores } from '@/data/cities';
 import { seriesList } from '@/data/series';
-import { formatPrice } from '@/utils/format';
+import { formatPrice, formatTime } from '@/utils/format';
+import { getTimeSlots } from '@/utils/date';
 import type { RuleType } from '@/types';
 
 const steps = [
   { id: 1, name: '选择地点', icon: MapPin },
   { id: 2, name: '选择系列', icon: Box },
-  { id: 3, name: '设置规则', icon: Settings },
+  { id: 3, name: '时间规则', icon: Settings },
   { id: 4, name: '确认发布', icon: Zap },
 ];
 
@@ -32,6 +33,7 @@ export default function CreatePage() {
   const districts = useMemo(() => getDistricts(createForm.city || currentCity), [createForm.city, currentCity]);
   const malls = useMemo(() => getMalls(createForm.city || currentCity, createForm.district || ''), [createForm.city, createForm.district]);
   const stores = useMemo(() => getStores(createForm.city || currentCity, createForm.district || '', createForm.mall || ''), [createForm.city, createForm.district, createForm.mall]);
+  const timeSlots = useMemo(() => getTimeSlots(), []);
 
   const selectedSeries = useMemo(() => 
     seriesList.find(s => s.id === createForm.seriesId),
@@ -42,7 +44,7 @@ export default function CreatePage() {
     switch (currentStep) {
       case 1: return createForm.district && createForm.mall && createForm.storeName;
       case 2: return createForm.seriesId;
-      case 3: return createForm.ruleType && createForm.totalSlots && createForm.pricePerSlot;
+      case 3: return createForm.ruleType && createForm.totalSlots && createForm.pricePerSlot && createForm.meetTime;
       default: return true;
     }
   };
@@ -59,14 +61,22 @@ export default function CreatePage() {
     }
   };
 
+  const handleSelectTime = (slot: string) => {
+    const [hours, minutes] = slot.split(':').map(Number);
+    const newDate = new Date();
+    newDate.setHours(hours, minutes, 0, 0);
+    setCreateForm({ meetTime: newDate });
+  };
+
   const handleSubmit = () => {
+    if (!createForm.meetTime) return;
     const formData = {
       city: createForm.city || currentCity,
       district: createForm.district || '',
       mall: createForm.mall || '',
       storeName: createForm.storeName || '',
       seriesId: createForm.seriesId || '',
-      meetTime: createForm.meetTime || new Date(Date.now() + 60 * 60 * 1000),
+      meetTime: createForm.meetTime,
       ruleType: createForm.ruleType || 'hidden-first',
       totalSlots: createForm.totalSlots || 6,
       pricePerSlot: createForm.pricePerSlot || 0,
@@ -279,9 +289,56 @@ export default function CreatePage() {
         {currentStep === 3 && (
           <div className="space-y-8 animate-fade-in">
             <div>
-              <h2 className="text-lg font-semibold text-white mb-4">选择分盒规则</h2>
-              <p className="text-dark-400 text-sm mb-6">选择适合你的分盒方式，公平透明</p>
+              <h2 className="text-lg font-semibold text-white mb-2 flex items-center gap-2">
+                <Clock className="w-5 h-5 text-neon-amber" />
+                选择到店时间
+              </h2>
+              <p className="text-dark-400 text-sm mb-6">选择你计划到店拆盒的时间，建议预留30-60分钟路程时间</p>
+              
+              <div className="glass rounded-2xl p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-neon-purple" />
+                    <span className="text-dark-300">今天稍后可选时段</span>
+                  </div>
+                  {createForm.meetTime && (
+                    <Tag variant="success" size="sm">
+                      已选 {formatTime(createForm.meetTime)}
+                    </Tag>
+                  )}
+                </div>
+                {timeSlots.length === 0 ? (
+                  <p className="text-dark-500 text-sm text-center py-6">今日时段已满，请改天再来</p>
+                ) : (
+                  <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
+                    {timeSlots.map((slot) => {
+                      const slotDate = new Date();
+                      const [h, m] = slot.split(':').map(Number);
+                      slotDate.setHours(h, m, 0, 0);
+                      const isSelected = createForm.meetTime && 
+                        createForm.meetTime.getHours() === h && 
+                        createForm.meetTime.getMinutes() === m;
+                      return (
+                        <button
+                          key={slot}
+                          onClick={() => handleSelectTime(slot)}
+                          className={`p-3 rounded-xl text-sm font-medium transition-all ${
+                            isSelected
+                              ? 'gradient-bg text-white glow-hover'
+                              : 'glass-light text-dark-200 hover:text-white hover:border-neon-purple/40'
+                          }`}
+                        >
+                          {slot}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
 
+            <div>
+              <h2 className="text-lg font-semibold text-white mb-4">选择分盒规则</h2>
               <div className="space-y-3">
                 {ruleOptions.map((rule) => (
                   <button
@@ -398,7 +455,9 @@ export default function CreatePage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-dark-400">到店时间</span>
-                  <span className="text-white">1小时内</span>
+                  <span className="text-neon-green font-semibold">
+                    {createForm.meetTime ? formatTime(createForm.meetTime) : '未选择'}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-dark-400">拼盒人数</span>
@@ -449,7 +508,7 @@ export default function CreatePage() {
               下一步
             </Button>
           ) : (
-            <Button onClick={handleSubmit} size="lg" className="flex-1">
+            <Button onClick={handleSubmit} disabled={!canProceed()} size="lg" className="flex-1">
               <Zap className="w-5 h-5" />
               发布拼盒
             </Button>

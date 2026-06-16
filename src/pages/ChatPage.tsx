@@ -8,29 +8,36 @@ import { formatTime, formatRelativeTime } from '@/utils/format';
 export default function ChatPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { getBoxById, messages, loadMessages, sendMessage, currentUserId } = useBoxStore();
+  const { getBoxById, loadMessages, sendMessage, currentUserId } = useBoxStore();
   const [inputValue, setInputValue] = useState('');
+  const [localMessages, setLocalMessages] = useState<any[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
   const box = useMemo(() => id ? getBoxById(id) : undefined, [id, getBoxById]);
-  
-  const sortedMessages = useMemo(() => 
-    [...messages].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()),
-    [messages]
-  );
 
   useEffect(() => {
     if (id) {
-      loadMessages(id);
+      const msgs = loadMessages(id);
+      setLocalMessages([...msgs].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()));
     }
   }, [id, loadMessages]);
 
   useEffect(() => {
+    const interval = setInterval(() => {
+      if (id) {
+        const msgs = loadMessages(id);
+        setLocalMessages([...msgs].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()));
+      }
+    }, 500);
+    return () => clearInterval(interval);
+  }, [id, loadMessages]);
+
+  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [sortedMessages]);
+  }, [localMessages]);
 
   const handleSend = () => {
-    if (!inputValue.trim() || !box) return;
+    if (!inputValue.trim() || !box || !id) return;
     
     sendMessage(
       box.id,
@@ -40,6 +47,11 @@ export default function ChatPage() {
       inputValue.trim()
     );
     setInputValue('');
+    // 发送后立刻刷新
+    setTimeout(() => {
+      const msgs = loadMessages(id);
+      setLocalMessages([...msgs].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()));
+    }, 50);
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -89,6 +101,9 @@ export default function ChatPage() {
                 <div className="flex items-center gap-2 text-xs text-dark-400">
                   <Users className="w-3 h-3" />
                   <span>{box.joinedSlots}/{box.totalSlots}人</span>
+                  <span className="mx-1">·</span>
+                  <Clock className="w-3 h-3" />
+                  <span>{formatTime(box.meetTime)}到店</span>
                 </div>
               </div>
             </div>
@@ -120,7 +135,7 @@ export default function ChatPage() {
           </div>
 
           <div className="space-y-4">
-            {sortedMessages.map((msg) => {
+            {localMessages.map((msg) => {
               const isSystem = msg.type === 'system';
               const isMine = msg.userId === currentUserId;
 

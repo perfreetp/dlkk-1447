@@ -1,21 +1,34 @@
 import { useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, CreditCard, Wallet, CheckCircle, Clock, Users, Receipt, ChevronRight, Share2, AlertCircle } from 'lucide-react';
+import { ArrowLeft, CreditCard, Wallet, CheckCircle, Clock, Users, Receipt, ChevronRight, Share2, AlertCircle, Truck, RefreshCw, Gift } from 'lucide-react';
 import Header from '@/components/Layout/Header';
 import Button from '@/components/ui/Button';
 import Tag from '@/components/ui/Tag';
 import { useBoxStore } from '@/store/useBoxStore';
-import { formatPrice, getRuleTypeName, formatDateTime } from '@/utils/format';
+import { formatPrice, getRuleTypeName, formatDateTime, getDeliveryTypeName } from '@/utils/format';
+import type { DeliveryType } from '@/types';
+
+const DELIVERY_COST: Record<DeliveryType, number> = {
+  self: 0,
+  proxy: 8,
+  delivery: 15,
+};
 
 export default function PaymentPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { getBoxById, currentUserId } = useBoxStore();
+  const { getBoxById, currentUserId, getDeliveryType } = useBoxStore();
   const [paymentMethod, setPaymentMethod] = useState('wechat');
   const [isPaying, setIsPaying] = useState(false);
   const [isPaid, setIsPaid] = useState(false);
+  const [paidAmount, setPaidAmount] = useState(0);
+  const [paidDelivery, setPaidDelivery] = useState<DeliveryType>('self');
   
   const box = useMemo(() => id ? getBoxById(id) : undefined, [id, getBoxById]);
+  const deliveryType = useMemo(() => 
+    id ? getDeliveryType(id) : 'self' as DeliveryType, 
+    [id, getDeliveryType]
+  );
 
   const myMember = useMemo(() => 
     box?.members.find(m => m.userId === currentUserId),
@@ -28,10 +41,26 @@ export default function PaymentPage() {
     { id: 'balance', name: '余额支付', icon: '👛', color: 'text-neon-purple' },
   ];
 
+  const deliveryInfo: Record<DeliveryType, { label: string; icon: any; desc: string }> = {
+    self: { label: '到店自提', icon: Gift, desc: '现场拆盒直接取走' },
+    proxy: { label: '代取', icon: RefreshCw, desc: '发起人代取后邮寄' },
+    delivery: { label: '同城送达', icon: Truck, desc: '专人同城配送' },
+  };
+
+  const costDetails = [
+    { label: '拼盒费用', value: box?.pricePerSlot || 0 },
+    { label: '服务费', value: 0 },
+    { label: deliveryInfo[deliveryType].label + '费', value: DELIVERY_COST[deliveryType] },
+  ];
+
+  const totalCost = costDetails.reduce((sum, item) => sum + item.value, 0);
+
   const handlePay = () => {
     setIsPaying(true);
     setTimeout(() => {
       setIsPaying(false);
+      setPaidAmount(totalCost);
+      setPaidDelivery(deliveryType);
       setIsPaid(true);
     }, 2000);
   };
@@ -47,14 +76,6 @@ export default function PaymentPage() {
     );
   }
 
-  const costDetails = [
-    { label: '拼盒费用', value: box.pricePerSlot },
-    { label: '服务费', value: 0 },
-    { label: '配送费', value: myMember?.deliveryType === 'delivery' ? 15 : myMember?.deliveryType === 'proxy' ? 8 : 0 },
-  ];
-
-  const totalCost = costDetails.reduce((sum, item) => sum + item.value, 0);
-
   if (isPaid) {
     return (
       <div className="min-h-screen bg-grid">
@@ -68,16 +89,41 @@ export default function PaymentPage() {
             <h2 className="text-2xl font-bold text-white mb-2">支付成功</h2>
             <p className="text-dark-400 mb-6">你的拼盒费用已结清</p>
 
-            <div className="glass-light rounded-xl p-4 mb-6">
-              <div className="flex items-center justify-between mb-3">
+            <div className="glass-light rounded-xl p-4 mb-6 space-y-3 text-left">
+              <div className="flex items-center justify-between">
                 <span className="text-dark-400">支付金额</span>
-                <span className="text-2xl font-bold gradient-text">{formatPrice(totalCost)}</span>
+                <span className="text-2xl font-bold gradient-text">{formatPrice(paidAmount)}</span>
               </div>
               <div className="flex items-center justify-between text-sm">
                 <span className="text-dark-400">支付方式</span>
                 <span className="text-dark-200">
                   {paymentMethods.find(m => m.id === paymentMethod)?.name}
                 </span>
+              </div>
+              <div className="flex items-center justify-between text-sm pt-3 border-t border-dark-700/50">
+                <span className="text-dark-400">取货方式</span>
+                <div className="flex items-center gap-1.5">
+                  {(() => {
+                    const info = deliveryInfo[paidDelivery];
+                    const IconCmp = info.icon;
+                    return (
+                      <Tag variant={paidDelivery === 'self' ? 'success' : paidDelivery === 'proxy' ? 'purple' : 'warning'} size="sm">
+                        <IconCmp className="w-3 h-3 mr-1" />
+                        {info.label}
+                      </Tag>
+                    );
+                  })()}
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-2 pt-3 border-t border-dark-700/50">
+                {costDetails.map((item, idx) => (
+                  <div key={idx} className="text-center">
+                    <p className="text-dark-500 text-xs mb-1">{item.label}</p>
+                    <p className={`font-semibold text-sm ${item.value === 0 ? 'text-neon-green' : 'text-white'}`}>
+                      {item.value === 0 ? '免费' : formatPrice(item.value)}
+                    </p>
+                  </div>
+                ))}
               </div>
             </div>
 
@@ -134,6 +180,53 @@ export default function PaymentPage() {
 
         <div className="glass rounded-2xl p-5 mb-6">
           <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+            <Truck className="w-5 h-5 text-neon-green" />
+            取货方式
+          </h3>
+          <div className="space-y-2">
+            {(Object.keys(deliveryInfo) as DeliveryType[]).map((type) => {
+              const info = deliveryInfo[type];
+              const IconCmp = info.icon;
+              const cost = DELIVERY_COST[type];
+              const isSelected = deliveryType === type;
+              return (
+                <div
+                  key={type}
+                  className={`p-4 rounded-xl transition-all ${
+                    isSelected
+                      ? 'bg-neon-green/15 border border-neon-green/50'
+                      : 'glass-light'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                      isSelected ? 'bg-neon-green/20' : 'bg-dark-700/50'
+                    }`}>
+                      <IconCmp className={`w-5 h-5 ${isSelected ? 'text-neon-green' : 'text-dark-400'}`} />
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className={`font-medium ${isSelected ? 'text-neon-green' : 'text-dark-200'}`}>
+                          {info.label}
+                        </span>
+                        {isSelected && (
+                          <CheckCircle className="w-4 h-4 text-neon-green" />
+                        )}
+                      </div>
+                      <p className="text-xs text-dark-500 mt-0.5">{info.desc}</p>
+                    </div>
+                    <span className={`text-sm font-semibold ${cost === 0 ? 'text-neon-green' : 'text-white'}`}>
+                      {cost === 0 ? '免费' : `+${formatPrice(cost)}`}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="glass rounded-2xl p-5 mb-6">
+          <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
             <Receipt className="w-5 h-5 text-neon-purple" />
             费用明细
           </h3>
@@ -183,7 +276,7 @@ export default function PaymentPage() {
                 <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
                   paymentMethod === method.id
                     ? 'border-neon-purple bg-neon-purple'
-                    : 'border-dark-600'
+                    : 'border-dark-500'
                 }`}>
                   {paymentMethod === method.id && (
                     <CheckCircle className="w-3 h-3 text-white" />

@@ -13,9 +13,16 @@ import type { DeliveryType } from '@/types';
 export default function BoxDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { getBoxById, joinBox, leaveBox, currentUserId } = useBoxStore();
+  const { getBoxById, joinBox, leaveBox, currentUserId, setDeliveryType, getDeliveryType } = useBoxStore();
   const [secondsLeft, setSecondsLeft] = useState(0);
-  const [deliveryType, setDeliveryType] = useState<DeliveryType>('self');
+  const [deliveryTypeLocal, setDeliveryTypeLocal] = useState<DeliveryType>('self');
+
+  // 读取 store 里的配送方式初始化
+  useEffect(() => {
+    if (id) {
+      setDeliveryTypeLocal(getDeliveryType(id));
+    }
+  }, [id, getDeliveryType]);
   
   const box = useMemo(() => id ? getBoxById(id) : undefined, [id, getBoxById]);
   
@@ -280,18 +287,21 @@ export default function BoxDetailPage() {
                   {deliveryOptions.map((option) => (
                     <button
                       key={option.type}
-                      onClick={() => setDeliveryType(option.type)}
+                      onClick={() => {
+                        setDeliveryTypeLocal(option.type);
+                        if (id) setDeliveryType(id, option.type);
+                      }}
                       className={`p-4 rounded-xl text-center transition-all ${
-                        deliveryType === option.type
+                        deliveryTypeLocal === option.type
                           ? 'bg-neon-green/20 border border-neon-green/50'
                           : 'glass-light hover:border-dark-500'
                       }`}
                     >
                       <option.icon className={`w-6 h-6 mx-auto mb-2 ${
-                        deliveryType === option.type ? 'text-neon-green' : 'text-dark-400'
+                        deliveryTypeLocal === option.type ? 'text-neon-green' : 'text-dark-400'
                       }`} />
                       <p className={`text-sm font-medium ${
-                        deliveryType === option.type ? 'text-neon-green' : 'text-dark-200'
+                        deliveryTypeLocal === option.type ? 'text-neon-green' : 'text-dark-200'
                       }`}>{option.label}</p>
                       <p className="text-xs text-dark-500 mt-1">{option.desc}</p>
                     </button>

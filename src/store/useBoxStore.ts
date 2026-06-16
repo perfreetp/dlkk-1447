@@ -1,16 +1,17 @@
 import { create } from 'zustand';
-import type { Box, BoxMember, ChatMessage, HistoryRecord, CreateBoxForm } from '@/types';
+import type { Box, BoxMember, ChatMessage, HistoryRecord, CreateBoxForm, DeliveryType } from '@/types';
 import { boxes as initialBoxes, chatMessages, historyRecords, getMessagesByBoxId, getBoxById, getResultByBoxId, boxResults } from '@/data/boxes';
 import { seriesList } from '@/data/series';
 
 interface BoxState {
   boxes: Box[];
   currentBox: Box | null;
-  messages: ChatMessage[];
+  messagesByBox: Record<string, ChatMessage[]>;
   historyRecords: HistoryRecord[];
   currentUserId: string;
   currentCity: string;
   createForm: Partial<CreateBoxForm>;
+  deliveryByBox: Record<string, DeliveryType>;
 
   setCurrentCity: (city: string) => void;
   setCreateForm: (form: Partial<CreateBoxForm>) => void;
@@ -20,20 +21,23 @@ interface BoxState {
   joinBox: (boxId: string, userId: string) => boolean;
   leaveBox: (boxId: string, userId: string) => boolean;
   sendMessage: (boxId: string, userId: string, userName: string, userAvatar: string, content: string) => void;
-  loadMessages: (boxId: string) => void;
+  loadMessages: (boxId: string) => ChatMessage[];
   getFilteredBoxes: (city?: string) => Box[];
   createBox: (form: CreateBoxForm) => Box;
   getHistoryRecords: () => HistoryRecord[];
   getStats: () => { total: number; hiddenCount: number; winRate: number; totalSpent: number };
+  setDeliveryType: (boxId: string, type: DeliveryType) => void;
+  getDeliveryType: (boxId: string) => DeliveryType;
 }
 
 export const useBoxStore = create<BoxState>((set, get) => ({
   boxes: initialBoxes,
   currentBox: null,
-  messages: [],
+  messagesByBox: {},
   historyRecords: historyRecords,
   currentUserId: 'user-current',
   currentCity: '上海',
+  deliveryByBox: {},
   createForm: {
     city: '上海',
     district: '',
@@ -111,8 +115,11 @@ export const useBoxStore = create<BoxState>((set, get) => ({
       timestamp: new Date(),
     };
     
-    set((state) => ({
-      messages: [...state.messages, systemMsg],
+    set((s) => ({
+      messagesByBox: {
+        ...s.messagesByBox,
+        [boxId]: [...(s.messagesByBox[boxId] || getMessagesByBoxId(boxId)), systemMsg],
+      },
     }));
 
     return true;
@@ -152,14 +159,24 @@ export const useBoxStore = create<BoxState>((set, get) => ({
       timestamp: new Date(),
     };
 
-    set((state) => ({
-      messages: [...state.messages, newMsg],
+    set((s) => ({
+      messagesByBox: {
+        ...s.messagesByBox,
+        [boxId]: [...(s.messagesByBox[boxId] || getMessagesByBoxId(boxId)), newMsg],
+      },
     }));
   },
 
   loadMessages: (boxId) => {
-    const msgs = getMessagesByBoxId(boxId);
-    set({ messages: msgs });
+    const state = get();
+    if (!state.messagesByBox[boxId]) {
+      const msgs = getMessagesByBoxId(boxId);
+      set((s) => ({
+        messagesByBox: { ...s.messagesByBox, [boxId]: msgs },
+      }));
+      return msgs;
+    }
+    return state.messagesByBox[boxId];
   },
 
   getFilteredBoxes: (city) => {
@@ -215,6 +232,24 @@ export const useBoxStore = create<BoxState>((set, get) => ({
       boxes: [newBox, ...state.boxes],
     }));
 
+    const welcomeMsg: ChatMessage = {
+      id: `msg-${Date.now()}-sys`,
+      boxId: newBox.id,
+      userId: 'system',
+      userName: '系统',
+      userAvatar: '',
+      content: '拼盒发布成功！等待小伙伴加入~',
+      type: 'system',
+      timestamp: new Date(),
+    };
+
+    set((s) => ({
+      messagesByBox: {
+        ...s.messagesByBox,
+        [newBox.id]: [welcomeMsg],
+      },
+    }));
+
     return newBox;
   },
 
@@ -227,5 +262,18 @@ export const useBoxStore = create<BoxState>((set, get) => ({
     const winRate = total > 0 ? Math.round((hiddenCount / total) * 100) : 0;
     const totalSpent = records.reduce((sum, r) => sum + r.totalSpent, 0);
     return { total, hiddenCount, winRate, totalSpent };
+  },
+
+  setDeliveryType: (boxId, type) => {
+    set((state) => ({
+      deliveryByBox: {
+        ...state.deliveryByBox,
+        [boxId]: type,
+      },
+    }));
+  },
+
+  getDeliveryType: (boxId) => {
+    return get().deliveryByBox[boxId] || 'self';
   },
 }));
